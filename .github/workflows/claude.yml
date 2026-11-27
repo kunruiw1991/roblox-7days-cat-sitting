@@ -1,0 +1,37 @@
+name: Claude Reproducibility Auditor (Opus 5.5 Extra)
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
+
+jobs:
+  claude:
+    if: |
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Run Claude Code Reproducibility Audit (Opus 5.5 Extra)
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: "--model claude-opus-5-5 --effort extra"
+          custom_instructions: |
+            Follow `.qa/claude_prompt.md` strictly using Claude Opus 5.5 (`extra` reasoning/effort).
+            Inspect `.qa/comparison_grid.png`, `.qa/reference/*`, and the full 3D Three.js codebase (`index.html`, `css/style.css`, `js/*.js`, `tests/*`).
+            Score Visual & Gameplay Reproducibility against https://youtu.be/VSQXM4IS8VE on a 1-10 rubric and report concrete P0/P1/P2 findings with file+line references.
