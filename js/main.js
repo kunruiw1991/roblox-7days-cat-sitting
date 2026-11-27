@@ -417,9 +417,63 @@ function syncAllUI() {
   renderPhone();
 }
 
-// 3D drag look + tap-to-interact raycasting
+const moveJoystick = document.getElementById("move-joystick");
+const joystickKnob = document.getElementById("joystick-knob");
+const joy = { active: false, pointerId: null, x: 0, y: 0, maxR: 34 };
+
+function updateJoystickFromEvent(e) {
+  const rect = moveJoystick.getBoundingClientRect();
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
+  let dx = e.clientX - cx;
+  let dy = e.clientY - cy;
+  const dist = Math.hypot(dx, dy);
+  if (dist > joy.maxR) {
+    dx = (dx / dist) * joy.maxR;
+    dy = (dy / dist) * joy.maxR;
+  }
+  joy.x = dx / joy.maxR;
+  joy.y = dy / joy.maxR;
+  joystickKnob.style.transform = `translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px)`;
+}
+
+function resetJoystick() {
+  joy.active = false;
+  joy.pointerId = null;
+  joy.x = 0;
+  joy.y = 0;
+  moveJoystick.classList.remove("active");
+  joystickKnob.style.transform = "translate(0px, 0px)";
+}
+
+moveJoystick.addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  moveJoystick.setPointerCapture?.(e.pointerId);
+  joy.active = true;
+  joy.pointerId = e.pointerId;
+  moveJoystick.classList.add("active");
+  updateJoystickFromEvent(e);
+});
+moveJoystick.addEventListener("pointermove", (e) => {
+  if (!joy.active || e.pointerId !== joy.pointerId) return;
+  e.preventDefault();
+  updateJoystickFromEvent(e);
+});
+moveJoystick.addEventListener("pointerup", (e) => {
+  if (e.pointerId === joy.pointerId) resetJoystick();
+});
+moveJoystick.addEventListener("pointercancel", (e) => {
+  if (e.pointerId === joy.pointerId) resetJoystick();
+});
+
+// 3D multi-touch drag look + tap-to-interact / tap-to-walk on floor
 canvas.addEventListener("pointerdown", (e) => {
+  if (drag.active && drag.pointerId !== e.pointerId) return;
+  e.preventDefault();
+  canvas.setPointerCapture?.(e.pointerId);
   drag.active = true;
+  drag.pointerId = e.pointerId;
   drag.moved = false;
   drag.startX = e.clientX;
   drag.startY = e.clientY;
@@ -428,32 +482,49 @@ canvas.addEventListener("pointerdown", (e) => {
 });
 
 canvas.addEventListener("pointermove", (e) => {
-  if (!drag.active) return;
+  if (!drag.active || e.pointerId !== drag.pointerId) return;
+  e.preventDefault();
   const dx = e.clientX - drag.lastX;
   const dy = e.clientY - drag.lastY;
   if (Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) > 6) {
     drag.moved = true;
   }
-  world.rotateLook(-dx * 0.005, -dy * 0.004);
+  world.rotateLook(-dx * 0.0055, -dy * 0.0045);
   drag.lastX = e.clientX;
   drag.lastY = e.clientY;
 });
 
 canvas.addEventListener("pointerup", (e) => {
-  if (drag.active && !drag.moved) {
-    const rect = canvas.getBoundingClientRect();
-    const ndcX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-    const ndcY = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-    const hit = world.raycastInteract(ndcX, ndcY);
-    handleWorldInteract(hit);
+  if (drag.active && e.pointerId === drag.pointerId) {
+    if (!drag.moved) {
+      const rect = canvas.getBoundingClientRect();
+      const ndcX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      const ndcY = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+      const hit = world.raycastInteract(ndcX, ndcY);
+      if (hit) {
+        handleWorldInteract(hit);
+      } else {
+        world.walkToFloorTap(ndcX, ndcY);
+      }
+    }
+    drag.active = false;
+    drag.pointerId = null;
   }
-  drag.active = false;
 });
-canvas.addEventListener("pointercancel", () => { drag.active = false; });
+canvas.addEventListener("pointercancel", (e) => {
+  if (e.pointerId === drag.pointerId) {
+    drag.active = false;
+    drag.pointerId = null;
+  }
+});
 
-// Keyboard walking (WASD) + shortcuts
+// Keyboard walking (WASD / Arrow keys) + shortcuts
 window.addEventListener("keydown", (e) => {
-  keys.add(e.key.toLowerCase());
+  const k = e.key.toLowerCase();
+  if (["arrowup", "arrowdown", "arrowleft", "arrowright", " "].includes(k)) {
+    e.preventDefault();
+  }
+  keys.add(k);
   if (e.key === "Escape") {
     galleryOverlay.classList.add("hidden");
     resetModal.classList.add("hidden");
@@ -465,6 +536,7 @@ window.addEventListener("keydown", (e) => {
   }
 });
 window.addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()));
+window.addEventListener("blur", () => { keys.clear(); resetJoystick(); });
 window.addEventListener("resize", () => world.resize());
 window.addEventListener("beforeunload", () => world.dispose());
 
@@ -542,13 +614,28 @@ btnResetYes.addEventListener("click", () => {
   syncAllUI();
 });
 
-// Main 60fps render loop
+// Main frame-rate independent render loop (combines WASD/Arrows + virtual thumbstick + live room detection)
+let lastFrameTime = 0;
 function animate(time) {
-  const spd = 0.085;
-  if (keys.has("w") || keys.has("arrowup")) world.moveLocal(spd, 0);
-  if (keys.has("s") || keys.has("arrowdown")) world.moveLocal(-spd, 0);
-  if (keys.has("a") || keys.has("arrowleft")) world.moveLocal(0, -spd);
-  if (keys.has("d") || keys.has("arrowright")) world.moveLocal(0, spd);
+  const dt = lastFrameTime ? Math.min(0.06, Math.max(0.008, (time - lastFrameTime) / 1000)) : 0.016;
+  lastFrameTime = time;
+  const spd = dt * 5.6;
+  let fwd = 0;
+  let strafe = 0;
+  if (keys.has("w") || keys.has("arrowup")) fwd += 1;
+  if (keys.has("s") || keys.has("arrowdown")) fwd -= 1;
+  if (keys.has("a") || keys.has("arrowleft")) strafe -= 1;
+  if (keys.has("d") || keys.has("arrowright")) strafe += 1;
+  if (Math.abs(joy.x) > 0.08 || Math.abs(joy.y) > 0.08) {
+    fwd += -joy.y;
+    strafe += joy.x;
+  }
+  if (fwd !== 0 || strafe !== 0) {
+    const mag = Math.hypot(fwd, strafe);
+    const scale = mag > 1 ? 1 / mag : 1;
+    world.moveLocal(fwd * scale * spd, strafe * scale * spd);
+    state.currentRoom = world.detectRoomFromPos();
+  }
   world.syncState(state, time);
   requestAnimationFrame(animate);
 }
@@ -557,6 +644,7 @@ function animate(time) {
 window.__GAME__ = {
   isReady: () => ready,
   getState: () => state,
+  getCameraPose: () => world.getCameraPose(),
   goRoom: (id) => goRoom(id, true),
   selectNight: (idx) => {
     selectNight(state, idx);

@@ -123,6 +123,46 @@ html, body {
   padding: 7px 10px;
 }
 
+/* Tactile Roblox-style virtual walking thumbstick (bottom-left) */
+.move-joystick {
+  position: fixed;
+  left: max(16px, env(safe-area-inset-left, 16px));
+  bottom: max(84px, calc(env(safe-area-inset-bottom, 12px) + 72px));
+  z-index: 28;
+  width: 108px;
+  height: 108px;
+  border-radius: 50%;
+  background: rgba(24, 28, 32, 0.45);
+  border: 2.5px solid rgba(255, 255, 255, 0.36);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: none;
+  cursor: pointer;
+}
+.move-joystick.active {
+  border-color: rgba(94, 194, 140, 0.9);
+  background: rgba(24, 28, 32, 0.62);
+}
+.joystick-knob {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.86);
+  border: 2px solid rgba(24, 28, 32, 0.35);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+  transform: translate(0px, 0px);
+  transition: transform 0.08s ease-out;
+}
+.move-joystick.active .joystick-knob {
+  transition: none;
+  background: #ffffff;
+}
+
 .icon-btn {
   width: 36px;
   height: 36px;

@@ -511,6 +511,43 @@ export class CatSittingWorld {
     this.camTargetPos.z = Math.max(-4.3, Math.min(15.5, this.camTargetPos.z + (fz * forward + rz * strafe)));
   }
 
+  walkToFloorTap(ndcX, ndcY) {
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera({ x: ndcX, y: ndcY }, this.camera);
+    const floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+    const hitPt = new THREE.Vector3();
+    if (ray.ray.intersectPlane(floorPlane, hitPt)) {
+      const dist = Math.hypot(hitPt.x - this.camPos.x, hitPt.z - this.camPos.z);
+      if (dist > 0.4 && dist < 18) {
+        this.camTargetPos.x = Math.max(-9.4, Math.min(10.4, hitPt.x));
+        this.camTargetPos.z = Math.max(-4.3, Math.min(15.5, hitPt.z));
+        return true;
+      }
+    }
+    return false;
+  }
+
+  detectRoomFromPos() {
+    const x = this.camPos.x;
+    const z = this.camPos.z;
+    if (z > 7.6) return "outside";
+    if (x < -4.8 && z > 3.2) return "bedroom";
+    if (x < -5.1 && z <= 3.2) return "laundry";
+    if (x > 3.1) return "living";
+    if (z > 3.2) return "hallway";
+    return "kitchen";
+  }
+
+  getCameraPose() {
+    return {
+      x: Number(this.camPos.x.toFixed(3)),
+      y: Number(this.camPos.y.toFixed(3)),
+      z: Number(this.camPos.z.toFixed(3)),
+      yaw: Number(this.yaw.toFixed(3)),
+      pitch: Number(this.pitch.toFixed(3)),
+    };
+  }
+
   raycastInteract(ndcX, ndcY) {
     const ray = new THREE.Raycaster();
     ray.setFromCamera({ x: ndcX, y: ndcY }, this.camera);
@@ -589,10 +626,10 @@ export class CatSittingWorld {
     this.catGroup.lookAt(this.camera.position.x, this.catGroup.position.y + 0.5, this.camera.position.z);
     this.catTail.rotation.y = Math.sin(time * 0.007) * 0.45;
 
-    // Smooth camera interpolation
-    this.camPos.lerp(this.camTargetPos, 0.12);
-    this.yaw += (this.targetYaw - this.yaw) * 0.16;
-    this.pitch += (this.targetPitch - this.pitch) * 0.16;
+    // Responsive camera interpolation
+    this.camPos.lerp(this.camTargetPos, 0.28);
+    this.yaw += (this.targetYaw - this.yaw) * 0.32;
+    this.pitch += (this.targetPitch - this.pitch) * 0.32;
     this.camera.position.copy(this.camPos);
     this.camera.rotation.order = "YXZ";
     this.camera.rotation.y = this.yaw;

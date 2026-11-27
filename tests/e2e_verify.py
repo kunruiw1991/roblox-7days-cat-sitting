@@ -132,6 +132,32 @@ def main():
         page.screenshot(path=shot1)
         Image.open(shot1).convert("RGB").save(os.path.join(ROOT, "screenshot.jpg"), quality=90, optimize=True)
 
+        # Verify virtual thumbstick walking + canvas drag-look + WASD actually move the 3D camera!
+        pose0 = page.evaluate("window.__GAME__.getCameraPose()")
+        joy_box = page.locator("#move-joystick").bounding_box()
+        assert joy_box is not None, "Virtual thumbstick missing"
+        jx, jy = joy_box["x"] + joy_box["width"] / 2, joy_box["y"] + joy_box["height"] / 2
+        page.mouse.move(jx, jy)
+        page.mouse.down()
+        page.mouse.move(jx, jy - 32, steps=5)
+        page.wait_for_timeout(320)
+        page.mouse.up()
+        pose1 = page.evaluate("window.__GAME__.getCameraPose()")
+        moved_dist = ((pose1["x"] - pose0["x"]) ** 2 + (pose1["z"] - pose0["z"]) ** 2) ** 0.5
+        assert moved_dist > 0.3, f"Virtual thumbstick did not move camera! {pose0} -> {pose1}"
+
+        # Verify canvas drag-look rotates camera yaw
+        page.mouse.move(640, 360)
+        page.mouse.down()
+        page.mouse.move(780, 340, steps=6)
+        page.mouse.up()
+        page.wait_for_timeout(200)
+        pose2 = page.evaluate("window.__GAME__.getCameraPose()")
+        assert abs(pose2["yaw"] - pose1["yaw"]) > 0.15, f"Canvas drag-look did not rotate yaw! {pose1} -> {pose2}"
+        print(f"[PASS] Movement verified: thumbstick walked {moved_dist:.2f}u, drag-look rotated yaw {pose1['yaw']:.2f} -> {pose2['yaw']:.2f}")
+        page.evaluate("window.__GAME__.goRoom('kitchen')")
+        page.wait_for_timeout(150)
+
         # Verify centered reset confirmation modal safety
         page.click("#btn-reset")
         assert page.locator("#reset-modal:not(.hidden)").count() == 1
